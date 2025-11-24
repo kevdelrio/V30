@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Outil Cadastral - Import Universel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* CSS RESET & BASE */
+:root{ --brand:#ff7a00; --green:#10b981; --red:#ef4444; --grey:#f3f4f6; --ink:#111; }
+*{box-sizing:border-box} body{margin:0;font-family:"Outfit",sans-serif;background:var(--grey);color:var(--ink);padding-bottom:100px;}
+header{background:#fff;border-bottom:1px solid #ddd;padding:15px;text-align:center;font-weight:700;font-size:18px;}
+main{max-width:1800px;margin:20px auto;padding:0 20px;}
+
+/* UPLOAD ZONES */
+.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;}
+.drop-zone{background:#fff;border:2px dashed #ccc;border-radius:12px;padding:30px;text-align:center;cursor:pointer;transition:0.2s;}
+.drop-zone:hover{border-color:var(--brand);background:#fff7f0;}
+.drop-zone.ok{border-color:var(--green);background:#f0fdfa;}
+.drop-zone h3{margin:0 0 5px;font-size:16px;}
+.drop-zone p{margin:0;font-size:13px;color:#666;}
+.status-text{display:block;margin-top:10px;font-weight:bold;font-size:12px;}
+.status-text.success{color:var(--green);}
+.status-text.error{color:var(--red);}
+
+/* DEBUG BOX */
+#debugLog{display:none;background:#222;color:#0f0;padding:15px;border-radius:8px;font-family:monospace;margin-bottom:20px;max-height:200px;overflow:auto;font-size:12px;}
+
+/* BUTTONS */
+.btn-bar{position:sticky;top:0;background:#fff;padding:15px;border-bottom:1px solid #eee;z-index:100;display:flex;gap:10px;align-items:center;justify-content:space-between; flex-wrap:wrap;}
+.btn{border:none;border-radius:6px;padding:10px 20px;font-weight:600;cursor:pointer;background:#e5e7eb;color:#333;}
+.btn-brand{background:var(--brand);color:#fff;}
+.btn-brand:disabled{opacity:0.5;cursor:not-allowed;}
+.btn-green{background:var(--green);color:#fff;}
+
+/* TABLES */
+.table-container{background:#fff;border-radius:12px;box-shadow:0 2px 5px rgba(0,0,0,0.05);overflow:hidden;margin-bottom:40px;}
+.table-scroll{overflow-x:auto;max-height:70vh;}
+table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;}
+th,td{padding:8px 12px;border-bottom:1px solid #eee;border-right:1px solid #f9f9f9;text-align:left;}
+thead th{background:#f8f9fa;position:sticky;top:0;z-index:10;border-bottom:2px solid #ddd;}
+
+/* COULEURS COLONNES */
+.th-cad{background:#f0f9ff;} .th-own{background:#fdf2f8;} 
+.th-pp{background:#ecfdf5;} .th-exc{background:#fffbeb;}
+.th-serv{background:#f5f3ff;} .th-loc{background:#fff7ed;}
+.th-plan{background:#fffff0;}
+
+/* EDITABLE */
+td[contenteditable=true]:hover{background:#fffde7;outline:1px solid #ccc;}
+td[contenteditable=true]:focus{background:#fff;outline:2px solid var(--brand);color:#000;}
+
+</style>
+</head>
+<body>
+
+<header>Outil Cadastral : Import Universel & Fiabilisé</header>
+
+<main>
+    <!-- ZONE DE DEBUG VISIBLE EN CAS D'ERREUR -->
+    <div id="debugLog"></div>
+
+    <!-- ZONE D'IMPORT -->
+    <div class="upload-grid">
+        <!-- Propriétaires -->
+        <div class="drop-zone" id="dzA" onclick="document.getElementById('fileA').click()">
+            <h3>1. Fichier Propriétaires (Parties)</h3>
+            <p>Cliquez ou glissez le fichier ici</p>
+            <span class="status-text" id="statusA">En attente...</span>
+            <input type="file" id="fileA" hidden accept=".xlsx,.xls,.csv" multiple>
+        </div>
+        <!-- Parcelles -->
+        <div class="drop-zone" id="dzB" onclick="document.getElementById('fileB').click()">
+            <h3>2. Fichier Parcelles (Matrice)</h3>
+            <p>Cliquez ou glissez le fichier ici</p>
+            <span class="status-text" id="statusB">En attente...</span>
+            <input type="file" id="fileB" hidden accept=".xlsx,.xls,.csv" multiple>
+        </div>
+    </div>
+
+    <!-- BOUTONS -->
+    <div class="btn-bar">
+        <div>
+            <button id="btnFusion" class="btn btn-brand" disabled onclick="fusionnerDonnees()">Fusionner les données</button>
+            <button class="btn" onclick="location.reload()">Réinitialiser</button>
+        </div>
+        <div>
+            <input type="text" id="searchBox" placeholder="Rechercher..." style="padding:8px;border-radius:4px;border:1px solid #ccc;" oninput="filtrerTableaux()">
+            <button id="btnExcel" class="btn btn-green" disabled onclick="exportExcel()">Export Excel</button>
+        </div>
+    </div>
+
+    <!-- TABLEAU 1 -->
+    <h3 style="margin-top:0;">1. Tableau des Emprises (Maitre)</h3>
+    <div class="table-container">
+        <div class="table-scroll">
+            <table id="t1">
+                <thead>
+                    <tr>
+                        <th>N°</th><th>Sel.</th>
+                        <th class="th-cad">Div</th><th class="th-cad">Sect</th><th class="th-cad">Parc</th><th class="th-cad">Nature</th>
+                        <th class="th-cad">Ha</th><th class="th-cad">A</th><th class="th-cad">Ca</th>
+                        <th class="th-own">Nom/Propriétaire</th><th class="th-own">Adresse</th>
+                        <th class="th-pp">Emprise PP (m²)</th>
+                        <th class="th-exc">Excédent (m²)</th>
+                        <th class="th-serv">Servitude (m²)</th>
+                        <th class="th-loc">Location (m²)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- TABLEAU 2 -->
+    <h3>2. Tableau d'Acquisition (Format Plan)</h3>
+    <div class="table-container">
+        <div class="table-scroll">
+            <table id="t2">
+                <thead>
+                    <tr>
+                        <th>N° Emprise</th>
+                        <th>N° Plan</th>
+                        <th>Commune + Div</th>
+                        <th>Parcelle N°</th>
+                        <th>Précad.</th>
+                        <th>Nature</th>
+                        <th>Situation</th>
+                        <th class="th-plan">Sup. Cad (m²)</th>
+                        <th class="th-plan">Sup. Mes (m²)</th>
+                        <th class="th-plan">Sup. PP (m²)</th>
+                        <th class="th-plan">Sup. SS (m²)</th>
+                        <th class="th-plan">Sup. Trav (m²)</th>
+                        <th>Propriétaires Complets</th>
+                        <th>Occupants</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+
+<!-- LIBRAIRIES -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+<script>
+/* ==============================================
+   GESTION DES ERREURS & LOGS
+   ============================================== */
+function log(msg, type='info') {
+    const d = document.getElementById('debugLog');
+    const color = type==='err' ? 'red' : '#0f0';
+    d.innerHTML += `<div style="color:${color}">> ${msg}</div>`;
+    if(type==='err') d.style.display = 'block';
+    console.log(msg);
+}
+window.onerror = function(msg, url, line) {
+    log(`ERREUR CRITIQUE JS: ${msg} (Ligne ${line})`, 'err');
+};
+
+/* ==============================================
+   VARIABLES GLOBALES
+   ============================================== */
+let DATA_PARC = [];
+let DATA_PROP = [];
+let MERGED_DATA = [];
+
+/* ==============================================
+   MOTEUR D'IMPORTATION (ROBUSTE)
+   ============================================== */
+
+// Fonction générique de lecture
+function lireFichier(file, type) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                
+                // On récupère TOUT en tableau de tableau (pas de JSON auto qui rate les headers)
+                const rawRows = XLSX.utils.sheet_to_json(firstSheet, {header: 1, defval: ""});
+                
+                log(`${file.name} : ${rawRows.length} lignes brutes lues.`);
+                
+                // SCANNER pour trouver la ligne d'en-tête (cherche mots clés)
+                let headerRowIndex = -1;
+                const keywords = type === 'PARC' 
+                    ? ['matrice', 'nature', 'contenance', 'divcad', 'section', 'capakey'] 
+                    : ['nom', 'name', 'droit', 'right', 'rue', 'street', 'situation'];
+                
+                // On scanne les 20 premières lignes
+                for(let i=0; i < Math.min(20, rawRows.length); i++) {
+                    const lineStr = rawRows[i].join(' ').toLowerCase();
+                    // Si la ligne contient au moins 2 mots clés
+                    let matches = keywords.filter(k => lineStr.includes(k)).length;
+                    if(matches >= 2) {
+                        headerRowIndex = i;
+                        break;
+                    }
+                }
+
+                if(headerRowIndex === -1) {
+                    // Si on trouve pas, on suppose ligne 0
+                    headerRowIndex = 0;
+                    log(`⚠️ Impossible de détecter l'en-tête avec certitude pour ${file.name}. Utilisation ligne 1.`, 'err');
+                } else {
+                    log(`✅ En-tête trouvé à la ligne ${headerRowIndex + 1}`);
+                }
+
+                // Extraction des données mappées
+                const headers = rawRows[headerRowIndex].map(h => String(h).toLowerCase().trim());
+                const cleanData = [];
+
+                for(let i = headerRowIndex + 1; i < rawRows.length; i++) {
+                    let row = rawRows[i];
+                    if(!row || row.length === 0) continue;
+                    
+                    let obj = {};
+                    headers.forEach((h, idx) => {
+                        // Normalisation des clés pour éviter les bugs (enlève accents, espaces)
+                        let cleanH = h.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+                        if(cleanH) obj[cleanH] = row[idx];
+                    });
+                    cleanData.push(obj);
+                }
+
+                resolve(cleanData);
+
+            } catch(err) {
+                reject(err);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+// Gestionnaires d'événements Input
+document.getElementById('fileA').addEventListener('change', async (e) => {
+    handleFiles(e.target.files, 'PROP');
+});
+document.getElementById('fileB').addEventListener('change', async (e) => {
+    handleFiles(e.target.files, 'PARC');
+});
+
+async function handleFiles(files, type) {
+    if(files.length === 0) return;
+    const statusDiv = document.getElementById(type === 'PROP' ? 'statusA' : 'statusB');
+    const zoneDiv = document.getElementById(type === 'PROP' ? 'dzA' : 'dzB');
+    
+    statusDiv.textContent = "Lecture en cours...";
+    statusDiv.className = "status-text";
+
+    try {
+        let count = 0;
+        for(let f of files) {
+            const data = await lireFichier(f, type);
+            if(type === 'PARC') DATA_PARC = DATA_PARC.concat(data);
+            else DATA_PROP = DATA_PROP.concat(data);
+            count += data.length;
+        }
+
+        statusDiv.textContent = `✅ ${count} lignes chargées (Total: ${type==='PARC'?DATA_PARC.length:DATA_PROP.length})`;
+        statusDiv.className = "status-text success";
+        zoneDiv.classList.add('ok');
+
+        if(DATA_PARC.length > 0 && DATA_PROP.length > 0) {
+            document.getElementById('btnFusion').disabled = false;
+        }
+
+    } catch(err) {
+        log(err.message, 'err');
+        statusDiv.textContent = "Erreur de lecture (voir log)";
+        statusDiv.className = "status-text error";
+    }
+}
+
+/* ==============================================
+   LOGIQUE MÉTIER & FUSION
+   ============================================== */
+
+function fusionnerDonnees() {
+    log("Début fusion...");
+    MERGED_DATA = [];
+
+    // 1. Indexer les propriétaires par ID
+    const mapProp = {};
+    DATA_PROP.forEach(p => {
+        // Chercher l'ID (plusieurs variantes possibles)
+        let id = p.propertysituationidf || p.situationidf || p.id || "";
+        if(!id) return;
+        if(!mapProp[id]) mapProp[id] = [];
+        
+        // Construction objet proprio propre
+        mapProp[id].push({
+            nom: (p.name || p.nom || "").toUpperCase(),
+            prenom: (p.firstname || p.prenom || ""),
+            rue: (p.street || p.rue || ""),
+            num: (p.number || p.numero || ""),
+            cp: (p.zipcode || p.codepostal || ""),
+            ville: (p.municipality || p.commune || ""),
+            nn: (p.officialid || p.numeronational || p.bce || "")
+        });
+    });
+
+    // 2. Parcourir les parcelles
+    DATA_PARC.forEach((p, idx) => {
+        let id = p.propertysituationidf || p.situationidf || p.id || "";
+        let owners = mapProp[id] || [];
+
+        // Parsing Surface
+        let surf = parseFloat((p.surfaceverif || p.contenance || p.surfacetaxable || "0").toString().replace(',','.'));
+        if(isNaN(surf)) surf = 0;
+
+        // Parsing Nature
+        let natCode = p.nature || p.naturecode || "";
+        const mappingNature = {"1":"Terre","2":"Pâture","3":"Pré","4":"Jardin","6":"Pré","9":"Bois","33":"Chemin","78":"Terrain à bâtir","200":"Maison"};
+        let natLabel = mappingNature[natCode] || p.naturelabel || natCode;
+
+        // Parsing Identifiant Parcelle
+        let div = p.divcad || p.division || "";
+        let sect = p.section || "";
+        let rad = p.primarynumber || p.radical || "";
+        let bis = p.bisnumber || p.bis || "";
+        let exp = p.exponentletter || p.exposant || "";
+        let puis = p.exponentnumber || p.puissance || "";
+        let parcStr = `${sect} ${rad} ${bis? '/'+bis : ''} ${exp} ${puis}`.trim();
+
+        // Objet fusionné
+        MERGED_DATA.push({
+            id: idx,
+            div: div,
+            sect: sect,
+            parc: parcStr,
+            nature: natLabel,
+            surf_cad: surf,
+            pp_m2: 0,
+            exc_m2: 0,
+            serv_m2: 0,
+            loc_m2: 0,
+            ss_m2: 0,
+            trav_m2: 0,
+            owners: owners,
+            // Champs texte
+            plan_num: "",
+            precad: "",
+            sit: owners.length > 0 ? `${owners[0].rue} ${owners[0].num}, ${owners[0].ville}` : ""
+        });
+    });
+
+    log(`Fusion terminée. ${MERGED_DATA.length} lignes créées.`);
+    renderAll();
+    document.getElementById('btnExcel').disabled = false;
+}
+
+/* ==============================================
+   RENDU TABLEAUX
+   ============================================== */
+function m2toHa(m2) {
+    if(!m2) return {h:"", a:"", c:""};
+    let v = Math.round(m2);
+    let h = Math.floor(v/10000); v %= 10000;
+    let a = Math.floor(v/100); v %= 100;
+    return {h: h||"", a: a<10 && h ? '0'+a : (a||""), c: v<10 ? '0'+v : v};
+}
+
+function renderAll() {
+    renderT1();
+    renderT2();
+}
+
+function renderT1() {
+    const tbody = document.querySelector('#t1 tbody');
+    tbody.innerHTML = '';
+    const search = document.getElementById('searchBox').value.toLowerCase();
+
+    MERGED_DATA.forEach((row, idx) => {
+        // Filtre
+        if(search && !JSON.stringify(row).toLowerCase().includes(search)) return;
+
+        const tr = document.createElement('tr');
+        const s = m2toHa(row.surf_cad);
+        const pp = m2toHa(row.pp_m2);
+        const exc = m2toHa(row.surf_cad - row.pp_m2);
+        const serv = m2toHa(row.serv_m2);
+        const loc = m2toHa(row.loc_m2);
+        
+        // Proprios concaténés
+        let props = row.owners.map(o => `<div><b>${o.nom}</b> ${o.prenom}</div>`).join('');
+        let addrs = row.owners.map(o => `<div>${o.rue} ${o.num}, ${o.cp} ${o.ville}</div>`).join('');
+
+        const ed = (k) => `contenteditable="true" onblur="updateData(${idx}, '${k}', this.innerText)"`;
+
+        tr.innerHTML = `
+            <td>${idx+1}</td>
+            <td><input type="checkbox"></td>
+            <td ${ed('div')}>${row.div}</td>
+            <td ${ed('sect')}>${row.sect}</td>
+            <td ${ed('parc')}>${row.parc}</td>
+            <td ${ed('nature')}>${row.nature}</td>
+            <td>${s.h}</td><td>${s.a}</td><td>${s.c}</td>
+            <td>${props}</td>
+            <td>${addrs}</td>
+            <td ${ed('pp_m2')} style="background:#ecfdf5">${pp.h} ${pp.a} ${pp.c}</td>
+            <td>${exc.h} ${exc.a} ${exc.c}</td>
+            <td ${ed('serv_m2')} style="background:#f5f3ff">${serv.h} ${serv.a} ${serv.c}</td>
+            <td ${ed('loc_m2')} style="background:#fff7ed">${loc.h} ${loc.a} ${loc.c}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderT2() {
+    const tbody = document.querySelector('#t2 tbody');
+    tbody.innerHTML = '';
+    const search = document.getElementById('searchBox').value.toLowerCase();
+
+    MERGED_DATA.forEach((row, idx) => {
+        if(search && !JSON.stringify(row).toLowerCase().includes(search)) return;
+
+        const tr = document.createElement('tr');
+        const ed = (k) => `contenteditable="true" onblur="updateData(${idx}, '${k}', this.innerText)"`;
+
+        // Proprio format complet
+        let fullProps = row.owners.map(o => 
+            `(${o.nn ? 'NN:'+o.nn : ''}) ${o.nom} ${o.prenom} - ${o.rue} ${o.num}, ${o.cp} ${o.ville}`
+        ).join('\n----------------\n');
+        
+        let commDiv = (row.owners[0]?.ville || "") + " " + row.div;
+
+        tr.innerHTML = `
+            <td>${idx+1}</td>
+            <td ${ed('plan_num')}>${row.plan_num}</td>
+            <td>${commDiv}</td>
+            <td>${row.sect} ${row.parc}</td>
+            <td ${ed('precad')}>${row.precad}</td>
+            <td>${row.nature}</td>
+            <td ${ed('sit')}>${row.sit}</td>
+            <td style="text-align:right">${row.surf_cad}</td>
+            <td ${ed('surf_cad')} style="text-align:right">${row.surf_cad}</td>
+            <td ${ed('pp_m2')} style="text-align:right">${row.pp_m2}</td>
+            <td ${ed('ss_m2')} style="text-align:right">${row.ss_m2}</td>
+            <td ${ed('trav_m2')} style="text-align:right">${row.trav_m2}</td>
+            <td class="txt-red" style="white-space:pre-wrap;font-size:11px;">${fullProps}</td>
+            <td contenteditable="true"></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// Mise à jour des données (Synchro)
+function updateData(idx, key, val) {
+    val = val.trim();
+    
+    // Si c'est une surface Ha A Ca entrée manuellement, c'est compliqué, 
+    // ici on suppose que l'edit vient du tableau 2 (M²) ou que l'utilisateur tape du M² brut.
+    // Pour simplifier cette version, on parse comme float si c'est un champ m2
+    if(key.endsWith('_m2') || key === 'surf_cad') {
+        // Nettoyage si format Ha A Ca collé par erreur (on prend juste les chiffres)
+        let clean = val.replace(/[^0-9.,]/g, '').replace(',','.');
+        MERGED_DATA[idx][key] = parseFloat(clean) || 0;
+    } else {
+        MERGED_DATA[idx][key] = val;
+    }
+    
+    // On relance le rendu pour synchro
+    // Petit delai pour pas perdre le focus instantanément (trick UX)
+    setTimeout(renderAll, 50); 
+}
+
+function filtrerTableaux() {
+    renderAll();
+}
+
+/* ==============================================
+   EXPORT EXCEL (SIMPLE)
+   ============================================== */
+async function exportExcel() {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Emprises");
+    
+    // Header
+    ws.addRow(["N°", "Division", "Section", "Parcelle", "Nature", "Surf Cad (m²)", "Propriétaires", "Emprise PP (m²)", "Servitude (m²)", "Location (m²)"]);
+    
+    MERGED_DATA.forEach((r, i) => {
+        let props = r.owners.map(o => `${o.nom} ${o.prenom}`).join(' / ');
+        ws.addRow([i+1, r.div, r.sect, r.parc, r.nature, r.surf_cad, props, r.pp_m2, r.serv_m2, r.loc_m2]);
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheet.sheet"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "export_cadastre.xlsx";
+    a.click();
+}
+
+// Initialisation drag&drop tableau
+new Sortable(document.querySelector('#t1 tbody'), {
+    handle: 'tr',
+    onEnd: (evt) => {
+        const item = MERGED_DATA.splice(evt.oldIndex, 1)[0];
+        MERGED_DATA.splice(evt.newIndex, 0, item);
+        renderAll();
+    }
+});
+</script>
+</body>
+</html>
