@@ -16,6 +16,7 @@ main{max-width:1800px;margin:20px auto;padding:0 20px;}
 .upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;}
 .drop-zone{background:#fff;border:2px dashed #ccc;border-radius:12px;padding:30px;text-align:center;cursor:pointer;transition:0.2s;}
 .drop-zone:hover{border-color:var(--brand);background:#fff7f0;}
+.drop-zone.drag{border-color:var(--brand);background:#fff7f0;}
 .drop-zone.ok{border-color:var(--green);background:#f0fdfa;}
 .drop-zone h3{margin:0 0 5px;font-size:16px;}
 .drop-zone p{margin:0;font-size:13px;color:#666;}
@@ -32,6 +33,14 @@ main{max-width:1800px;margin:20px auto;padding:0 20px;}
 .btn-brand{background:var(--brand);color:#fff;}
 .btn-brand:disabled{opacity:0.5;cursor:not-allowed;}
 .btn-green{background:var(--green);color:#fff;}
+.btn-ghost{background:#fff;border:1px solid #ddd;}
+.icon{width:14px;height:14px;vertical-align:middle;margin-right:6px;}
+
+/* NOTIFICATION BAR */
+.notificationBar{position:fixed;top:15px;right:15px;min-width:260px;background:#fff;border-left:5px solid var(--brand);box-shadow:0 10px 30px rgba(0,0,0,0.12);padding:12px 14px;border-radius:8px;font-size:13px;display:none;z-index:300;}
+.notificationBar.success{border-color:var(--green);} .notificationBar.error{border-color:var(--red);}
+.notificationBar.show{display:block;animation:fadeIn 0.25s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
 
 /* TABLES */
 .table-container{background:#fff;border-radius:12px;box-shadow:0 2px 5px rgba(0,0,0,0.05);overflow:hidden;margin-bottom:40px;}
@@ -57,6 +66,7 @@ td[contenteditable=true]:focus{background:#fff;outline:2px solid var(--brand);co
 <header>Outil Cadastral : Import Universel & Fiabilisé</header>
 
 <main>
+    <div id="notification" class="notificationBar"></div>
     <!-- ZONE DE DEBUG VISIBLE EN CAS D'ERREUR -->
     <div id="debugLog"></div>
 
@@ -81,12 +91,25 @@ td[contenteditable=true]:focus{background:#fff;outline:2px solid var(--brand);co
     <!-- BOUTONS -->
     <div class="btn-bar">
         <div>
-            <button id="btnFusion" class="btn btn-brand" disabled onclick="fusionnerDonnees()">Fusionner les données</button>
-            <button class="btn" onclick="location.reload()">Réinitialiser</button>
+            <button id="btnFusion" class="btn btn-brand" disabled onclick="fusionnerDonnees()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 17l4 4 4-4"/><path d="M12 12v9"/><path d="M8 7l4-4 4 4"/><path d="M12 3v9"/></svg>
+                Fusionner les données
+            </button>
+            <button class="btn btn-ghost" onclick="resetAll()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                Réinitialiser
+            </button>
         </div>
         <div>
             <input type="text" id="searchBox" placeholder="Rechercher..." style="padding:8px;border-radius:4px;border:1px solid #ccc;" oninput="filtrerTableaux()">
-            <button id="btnExcel" class="btn btn-green" disabled onclick="exportExcel()">Export Excel</button>
+            <button id="btnPDF" class="btn btn-ghost" disabled onclick="exportPDF()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v4"/><path d="M12 19v4"/><path d="M3 8h18"/><path d="M3 16h18"/><path d="M7 12h10"/></svg>
+                Export PDF
+            </button>
+            <button id="btnExcel" class="btn btn-green" disabled onclick="exportExcel()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/><path d="M9 4v16"/><path d="m10 12-2 3"/><path d="m10 12 2 3"/></svg>
+                Export Excel
+            </button>
         </div>
     </div>
 
@@ -146,10 +169,39 @@ td[contenteditable=true]:focus{background:#fff;outline:2px solid var(--brand);co
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 
 <script>
 /* ==============================================
-   GESTION DES ERREURS & LOGS
+   CONSTANTES & VARIABLES
+   ============================================== */
+const { jsPDF } = window.jspdf;
+const STORAGE_KEY = 'cadastre_state_v1';
+const mapping = {
+"1":"Terre agricole","2":"Pature","3":"Pre","4":"Jardin","5":"Terrain maraicher","6":"Pre alluvial","7":"Pre embouche","8":"Patsart","9":"Bois","10":"Verger haute tige","11":"Verger basse tige","13":"Pepiniere","14":"Exploitation de sapins de Noel","17":"Parc","18":"Terrain de sport","20":"Plaine de jeux","21":"Terrain de camping","22":"Piscine","24":"Point d’eau","25":"Mare","26":"Etang","27":"Lac","28":"Douve","29":"Fosse","30":"Pisciculture",
+"33":"Chemin cadastre","34":"Place","35":"Terrain vain ou vague","36":"Bruyere","38":"Marais","39":"Fagne","41":"Alluvion","42":"Dune","43":"Rempart","44":"Digue","45":"Terril vain ou vague","46":"Terrain d’epandage vain ou vague","49":"Terrain d’epandage exploite","50":"Terrain industriel","51":"Chantier","52":"Quai","54":"Bassin industriel","55":"Chemin de fer","56":"Terril exploite","57":"Carriere","59":"Canal",
+"62":"Tumulus","63":"Borne","67":"Superficie d’un batiment ordinaire","68":"Superficie d’un batiment exceptionnel","69":"Superficie d’un batiment industriel","70":"Terrain","71":"Parking","72":"Champ d’aviation","73":"Terrain militaire","74":"Cimetiere","75":"Oseraie","76":"Bassin ordinaire","77":"Cour","78":"Terrain a batir","79":"Partie de parc de stationnement","80":"Materiel et outillage non-bati","85":"Bassin de decantation","86":"Rouissoir","87":"Bassin de materiel et outillage",
+"164":"Parties communes generales d’un batiment","165":"Parties communes specifiques d’un batiment","166":"Superficie d’un batiment (autre)","170":"Autre non bati","200":"Maison","201":"Baraquement","202":"Taudis","203":"Remise","204":"Garage","205":"Abri","206":"Toilettes","220":"Entite privative#","221":"Entites privatives","222":"Building","223":"Maison#","240":"Ferme","241":"Ecurie","242":"Pigeonnier","243":"Petit elevage","244":"Grand elevage","245":"Serre","246":"Champignonnieres","247":"Batiment rural",
+"260":"Imprimerie","261":"Garage atelier","262":"Forge","263":"Menuiserie","264":"Lavoir","265":"Atelier","280":"Laiterie","281":"Boulangerie","282":"Charcuterie","283":"Abattoir","284":"Fabrique d’aliments a betail","285":"Fabrique de cafe","286":"Brasserie","287":"Fabrique de boissons","288":"Fabrique de tabac","289":"Meunerie","290":"Fabrique de produits alimentaires",
+"300":"Fabrique d’habillement","301":"Usine textile","302":"Fabrique d’articles de cuir","303":"Fabrique de meubles","304":"Fabrique de jouets","305":"Papeterie","306":"Fabrique d’articles usuels",
+"320":"Briqueterie","321":"Cimenterie","322":"Scierie","323":"Fabrique de couleurs","324":"Fabrique de materiaux de construction","340":"Metallurgie","341":"Haut fourneau","342":"Four chaux","343":"Atelier de construction","344":"Fabrique de materiel electrique","345":"Raffinerie de petrole","346":"Usine chimique","347":"Fabrique de caoutchouc","348":"Glaciere","349":"Verrerie","350":"Fabrique de plastique","351":"Fabrique de ceramique","352":"Charbonnage","353":"Centrale electrique","354":"Usine de gaz","355":"Gazometre","356":"Cokerie","357":"Batiment industriel",
+"370":"Hangar","371":"Entrepot","372":"Cabine electrique","373":"Pylone","374":"Cabine a gaz","375":"Cabine","376":"Reservoir","377":"Silo","378":"Centre de recherche","379":"Sechoir","380":"Installation frigorifique","381":"Materiel et outillage bati","382":"Exploitation industrielle#",
+"400":"Banque","401":"Bourse","402":"Batiment de bureaux","403":"Cafe","404":"Hotel","405":"Restaurant","406":"Salle de fetes","407":"Maison de commerce","408":"Grand magasin","409":"Garage depot","410":"Batiment de parking","411":"Station-service","412":"Marche couvert","413":"Salle d’exposition","414":"Kiosque","415":"Batiment pour animaux",
+"420":"Maison communale","421":"Batiment de gouvernement","422":"Palais royal","423":"Batiment de justice","424":"Batiment penitentiaire","425":"Legation","426":"Batiment de police","427":"Batiment militaire","428":"Station","429":"Abri de transports","430":"Cabine telephonique","431":"Batiment de telecommunication","432":"Aeroport","433":"Batiment funeraire","434":"Batiment administratif",
+"440":"Orphelinat","441":"Creche","442":"Atelier protege","443":"Maison de repos","444":"Batiment hospitalier","445":"Etablissement de cure","446":"Batiment d’aide sociale",
+"460":"Batiment scolaire","461":"Universite","462":"Musee","463":"Bibliotheque",
+"480":"Eglise","481":"Chapelle","482":"Couvent","483":"Presbytere","484":"Seminaire","485":"Eveche","486":"Synagogue","487":"Mosquee","488":"Temple","489":"Batiment de culte",
+"500":"Etablissement de bains","501":"Installation sportive","502":"Home vacances","503":"Habitation de vacances","504":"Maison de jeunes","505":"Theatre","506":"Salle de spectacles","507":"Centre culturel","508":"Cinema","509":"Casino","510":"Point de vue",
+"520":"Ruines","521":"Souterrain","522":"Pavillon","523":"Chateau","524":"Batiment historique","525":"Monument","526":"Moulin a vent","527":"Moulin a eau","528":"Chateau d’eau","529":"Captage d’eau","530":"Installation d’epuration","531":"Traitement des immondices",
+"532":"Cave #","533":"Chambre #","534":"Studio #","535":"Commerce #","536":"Bureau #","537":"Appartement #","538":"Parties communes generales non baties","539":"Autre bati","540":"Autre non bati","541":"Droit sup./emph.","542":"Entite d’exploitation #","543":"Garage box #","544":"Parking couvert #","545":"Parking non-couvert #","546":"Reserve #","547":"Vitrine #","549":"Entite privative diverse #","550":"Cabine #","551":"Partie commune specifique non-batie","552":"Superficie et parties communes","553":"Parties communes","554":"Panneau solaire","555":"Superficie batie","556":"Volume entier","557":"Volume limite","558":"Volume semi-limite","559":"Domaine public"
+};
+let DATA_PARC = [];
+let DATA_PROP = [];
+let MERGED_DATA = [];
+
+/* ==============================================
+   UTILITAIRES
    ============================================== */
 function log(msg, type='info') {
     const d = document.getElementById('debugLog');
@@ -158,208 +210,272 @@ function log(msg, type='info') {
     if(type==='err') d.style.display = 'block';
     console.log(msg);
 }
-window.onerror = function(msg, url, line) {
-    log(`ERREUR CRITIQUE JS: ${msg} (Ligne ${line})`, 'err');
+function notify(msg, type='info') {
+    const bar = document.getElementById('notification');
+    bar.textContent = msg;
+    bar.className = `notificationBar ${type}`;
+    bar.classList.add('show');
+    setTimeout(()=>bar.classList.remove('show'), 3500);
+}
+function stripAccents(str="") {
+    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+function titleCaseSmart(str="") {
+    return str.toLowerCase().split(/([\s\-\'\,]+)/).map(s => s.match(/[a-zA-Z]/) ? s.charAt(0).toUpperCase()+s.slice(1) : s).join('').replace(/\s+/g,' ').trim();
+}
+function rightInfo(raw="") {
+    const t = stripAccents(String(raw));
+    if(t.includes('pleine') || t.includes('pp')) return {code:'PP', rank:1};
+    if(t.includes('nu') || t.includes('np')) return {code:'NP', rank:2};
+    if(t.includes('usuf') || t.includes('us')) return {code:'US', rank:3};
+    return {code:raw || 'PP', rank:4};
+}
+
+/* ==============================================
+   NORMALISATION & DETECTION
+   ============================================== */
+const headerSynonyms = {
+    situationidf:['situationidf','propertysituationidf','identifiant','matrice','capakey','id'],
+    divcad:['divcad','division','div'],
+    section:['section','sect'],
+    primarynumber:['primarynumber','radical','rad'],
+    bisnumber:['bisnumber','bis'],
+    exponentletter:['exponentletter','exposant','exp'],
+    exponentnumber:['exponentnumber','puissance','puis'],
+    nature:['nature','naturecode','nat'],
+    naturelabel:['naturelabel','labelnature'],
+    surfaceverif:['surfaceverif','surfacetaxable','contenance','surface','superficie','sup'],
+    name:['name','nom','raison','denomination'],
+    firstname:['firstname','prenom'],
+    street:['street','rue','voie'],
+    number:['number','numero','num'],
+    zipcode:['zipcode','codepostal','cp'],
+    municipality:['municipality','commune','localite','ville'],
+    officialid:['officialid','numeronational','nn','bce'],
+    right:['right','droit'],
+    country:['country','pays']
 };
 
-/* ==============================================
-   VARIABLES GLOBALES
-   ============================================== */
-let DATA_PARC = [];
-let DATA_PROP = [];
-let MERGED_DATA = [];
+function normalizeHeaders(rawRows) {
+    let bestIndex = 0;
+    let bestScore = -1;
+    rawRows.slice(0,20).forEach((row, idx) => {
+        const rowStr = row.join(' ').toLowerCase();
+        let score = 0;
+        Object.values(headerSynonyms).forEach(list => list.forEach(k => { if(rowStr.includes(k)) score++; }));
+        if(score > bestScore) {bestScore = score; bestIndex = idx;}
+    });
+    const headerRow = rawRows[bestIndex] || [];
+    const headers = headerRow.map(h => {
+        const clean = stripAccents(String(h)).replace(/[^a-z0-9]/g,'');
+        for(const [canon,list] of Object.entries(headerSynonyms)) {
+            if(list.includes(clean)) return canon;
+        }
+        return clean;
+    });
+    return {headers, start: bestIndex};
+}
 
-/* ==============================================
-   MOTEUR D'IMPORTATION (ROBUSTE)
-   ============================================== */
+function guessKind(headers) {
+    const ownerKeys = ['name','firstname','street','right','country'];
+    const parcKeys = ['divcad','section','nature','surfaceverif','primarynumber'];
+    const ownerScore = headers.filter(h => ownerKeys.includes(h)).length;
+    const parcScore = headers.filter(h => parcKeys.includes(h)).length;
+    return ownerScore > parcScore ? 'PROP' : 'PARC';
+}
 
-// Fonction générique de lecture
-function lireFichier(file, type) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, {type: 'array'});
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                
-                // On récupère TOUT en tableau de tableau (pas de JSON auto qui rate les headers)
-                const rawRows = XLSX.utils.sheet_to_json(firstSheet, {header: 1, defval: ""});
-                
-                log(`${file.name} : ${rawRows.length} lignes brutes lues.`);
-                
-                // SCANNER pour trouver la ligne d'en-tête (cherche mots clés)
-                let headerRowIndex = -1;
-                const keywords = type === 'PARC' 
-                    ? ['matrice', 'nature', 'contenance', 'divcad', 'section', 'capakey'] 
-                    : ['nom', 'name', 'droit', 'right', 'rue', 'street', 'situation'];
-                
-                // On scanne les 20 premières lignes
-                for(let i=0; i < Math.min(20, rawRows.length); i++) {
-                    const lineStr = rawRows[i].join(' ').toLowerCase();
-                    // Si la ligne contient au moins 2 mots clés
-                    let matches = keywords.filter(k => lineStr.includes(k)).length;
-                    if(matches >= 2) {
-                        headerRowIndex = i;
-                        break;
-                    }
-                }
-
-                if(headerRowIndex === -1) {
-                    // Si on trouve pas, on suppose ligne 0
-                    headerRowIndex = 0;
-                    log(`⚠️ Impossible de détecter l'en-tête avec certitude pour ${file.name}. Utilisation ligne 1.`, 'err');
-                } else {
-                    log(`✅ En-tête trouvé à la ligne ${headerRowIndex + 1}`);
-                }
-
-                // Extraction des données mappées
-                const headers = rawRows[headerRowIndex].map(h => String(h).toLowerCase().trim());
-                const cleanData = [];
-
-                for(let i = headerRowIndex + 1; i < rawRows.length; i++) {
-                    let row = rawRows[i];
-                    if(!row || row.length === 0) continue;
-                    
-                    let obj = {};
-                    headers.forEach((h, idx) => {
-                        // Normalisation des clés pour éviter les bugs (enlève accents, espaces)
-                        let cleanH = h.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
-                        if(cleanH) obj[cleanH] = row[idx];
-                    });
-                    cleanData.push(obj);
-                }
-
-                resolve(cleanData);
-
-            } catch(err) {
-                reject(err);
-            }
-        };
-        reader.readAsArrayBuffer(file);
+function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+    if(!lines.length) return [];
+    const delimiters = [';','\t',','];
+    let bestDelim = ',';
+    let bestCount = -1;
+    delimiters.forEach(d => {
+        const count = (lines[0].match(new RegExp(`\\${d}`,'g'))||[]).length;
+        if(count > bestCount) {bestCount = count; bestDelim = d;}
+    });
+    return lines.map(line => {
+        return line.split(bestDelim).map(cell => cell.replace(/^\"|\"$/g,'').trim());
     });
 }
 
-// Gestionnaires d'événements Input
-document.getElementById('fileA').addEventListener('change', async (e) => {
-    handleFiles(e.target.files, 'PROP');
-});
-document.getElementById('fileB').addEventListener('change', async (e) => {
-    handleFiles(e.target.files, 'PARC');
-});
+function readTolerant(file) {
+    return new Promise((resolve,reject) => {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        const ext = file.name.toLowerCase().split('.').pop();
+        reader.onload = (e) => {
+            try {
+                let rawRows = [];
+                if(ext === 'csv') {
+                    rawRows = parseCSV(e.target.result);
+                } else {
+                    const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+                    const firstSheet = wb.Sheets[wb.SheetNames[0]];
+                    rawRows = XLSX.utils.sheet_to_json(firstSheet,{header:1,defval:""});
+                }
+                if(!rawRows.length) return resolve({kind:'PARC', data:[]});
+                const {headers,start} = normalizeHeaders(rawRows);
+                const kind = guessKind(headers);
+                const data = [];
+                for(let i=start+1;i<rawRows.length;i++) {
+                    const row = rawRows[i];
+                    if(!row || row.every(c => String(c).trim()==='')) continue;
+                    const obj = {};
+                    headers.forEach((h,idx)=>{ if(h) obj[h]=row[idx]; });
+                    data.push(obj);
+                }
+                resolve({kind,data});
+            } catch(err) {
+                if(ext !== 'csv') {
+                    try {
+                        const text = new TextDecoder().decode(e.target.result);
+                        const rawRows = parseCSV(text);
+                        const {headers,start} = normalizeHeaders(rawRows);
+                        const kind = guessKind(headers);
+                        const data = [];
+                        for(let i=start+1;i<rawRows.length;i++) {
+                            const row = rawRows[i];
+                            const obj = {};
+                            headers.forEach((h,idx)=>{ if(h) obj[h]=row[idx]; });
+                            data.push(obj);
+                        }
+                        return resolve({kind,data});
+                    } catch(csvErr) {
+                        return reject(csvErr);
+                    }
+                }
+                reject(err);
+            }
+        };
+        if(ext === 'csv') reader.readAsText(file); else reader.readAsArrayBuffer(file);
+    });
+}
 
-async function handleFiles(files, type) {
-    if(files.length === 0) return;
-    const statusDiv = document.getElementById(type === 'PROP' ? 'statusA' : 'statusB');
-    const zoneDiv = document.getElementById(type === 'PROP' ? 'dzA' : 'dzB');
-    
-    statusDiv.textContent = "Lecture en cours...";
-    statusDiv.className = "status-text";
+/* ==============================================
+   CHARGEMENT FICHIERS
+   ============================================== */
+const ACCEPTED_EXT = ['xlsx','xls','csv'];
+document.getElementById('fileA').addEventListener('change', (e) => handleFiles(e.target.files));
+document.getElementById('fileB').addEventListener('change', (e) => handleFiles(e.target.files));
 
-    try {
-        let count = 0;
-        for(let f of files) {
-            const data = await lireFichier(f, type);
-            if(type === 'PARC') DATA_PARC = DATA_PARC.concat(data);
-            else DATA_PROP = DATA_PROP.concat(data);
-            count += data.length;
+['dzA','dzB'].forEach(id => {
+    const dz = document.getElementById(id);
+    ['dragenter','dragover'].forEach(evt => dz.addEventListener(evt, ev => {
+        ev.preventDefault();
+        dz.classList.add('drag');
+    }));
+    ['dragleave','drop'].forEach(evt => dz.addEventListener(evt, ev => {
+        ev.preventDefault();
+        dz.classList.remove('drag');
+    }));
+    dz.addEventListener('drop', ev => {
+        ev.preventDefault();
+        const dropped = Array.from(ev.dataTransfer.files || []);
+        const files = dropped.filter(f => ACCEPTED_EXT.includes(f.name.toLowerCase().split('.').pop() || ''));
+        if(!files.length) {
+            notify('Format non supporté. Utilisez un fichier .xlsx, .xls ou .csv','error');
+            return;
         }
+        handleFiles(files);
+    });
+});
 
-        statusDiv.textContent = `✅ ${count} lignes chargées (Total: ${type==='PARC'?DATA_PARC.length:DATA_PROP.length})`;
-        statusDiv.className = "status-text success";
-        zoneDiv.classList.add('ok');
-
-        if(DATA_PARC.length > 0 && DATA_PROP.length > 0) {
-            document.getElementById('btnFusion').disabled = false;
+async function handleFiles(files) {
+    if(!files || files.length === 0) return;
+    let loaded = 0;
+    for(const f of files) {
+        try {
+            const {kind,data} = await readTolerant(f);
+            if(kind === 'PROP') {
+                DATA_PROP = DATA_PROP.concat(data);
+            } else {
+                DATA_PARC = DATA_PARC.concat(data);
+            }
+            loaded += data.length;
+            log(`${f.name} chargé (${data.length} lignes, détecté ${kind}).`);
+        } catch(err) {
+            console.error(err);
+            notify(`Impossible de lire ${f.name}. Vérifiez le format du fichier.`,'error');
         }
-
-    } catch(err) {
-        log(err.message, 'err');
-        statusDiv.textContent = "Erreur de lecture (voir log)";
-        statusDiv.className = "status-text error";
     }
+    notify(`${loaded} lignes importées.`,'success');
+    document.getElementById('statusA').textContent = `Propriétaires: ${DATA_PROP.length}`;
+    document.getElementById('statusB').textContent = `Parcelles: ${DATA_PARC.length}`;
+    document.getElementById('statusA').className = 'status-text success';
+    document.getElementById('statusB').className = 'status-text success';
+    document.getElementById('dzA').classList.add('ok');
+    document.getElementById('dzB').classList.add('ok');
+    if(DATA_PARC.length && DATA_PROP.length) {
+        document.getElementById('btnFusion').disabled = false;
+    }
+    saveState();
 }
 
 /* ==============================================
    LOGIQUE MÉTIER & FUSION
    ============================================== */
-
 function fusionnerDonnees() {
     log("Début fusion...");
     MERGED_DATA = [];
-
-    // 1. Indexer les propriétaires par ID
     const mapProp = {};
     DATA_PROP.forEach(p => {
-        // Chercher l'ID (plusieurs variantes possibles)
-        let id = p.propertysituationidf || p.situationidf || p.id || "";
+        const id = p.situationidf || p.propertysituationidf || p.id || p.capakey || '';
         if(!id) return;
         if(!mapProp[id]) mapProp[id] = [];
-        
-        // Construction objet proprio propre
-        mapProp[id].push({
-            nom: (p.name || p.nom || "").toUpperCase(),
-            prenom: (p.firstname || p.prenom || ""),
-            rue: (p.street || p.rue || ""),
-            num: (p.number || p.numero || ""),
-            cp: (p.zipcode || p.codepostal || ""),
-            ville: (p.municipality || p.commune || ""),
-            nn: (p.officialid || p.numeronational || p.bce || "")
-        });
+        const right = rightInfo(p.right || p.droit || '');
+        const owner = {
+            nom: titleCaseSmart(p.name || p.nom || ''),
+            prenom: titleCaseSmart(p.firstname || p.prenom || ''),
+            rue: titleCaseSmart(p.street || p.rue || ''),
+            num: p.number || p.numero || '',
+            cp: p.zipcode || p.codepostal || '',
+            ville: titleCaseSmart(p.municipality || p.commune || ''),
+            nn: p.officialid || p.numeronational || p.bce || '',
+            right: right.code,
+            rightRank: right.rank,
+            country: (p.country || '').toString().toUpperCase() || 'BE'
+        };
+        if(owner.country && owner.country !== 'BE') {
+            notify(`Attention: propriétaire étranger détecté (${owner.country}).`,'error');
+        }
+        mapProp[id].push(owner);
     });
 
-    // 2. Parcourir les parcelles
     DATA_PARC.forEach((p, idx) => {
-        let id = p.propertysituationidf || p.situationidf || p.id || "";
-        let owners = mapProp[id] || [];
-
-        // Parsing Surface
-        let surf = parseFloat((p.surfaceverif || p.contenance || p.surfacetaxable || "0").toString().replace(',','.'));
+        const id = p.situationidf || p.propertysituationidf || p.id || p.capakey || '';
+        const owners = (mapProp[id] || []).sort((a,b)=>a.rightRank-b.rightRank);
+        let surf = parseFloat((p.surfaceverif || p.contenance || p.surfacetaxable || p.surface || '0').toString().replace(',','.'));
         if(isNaN(surf)) surf = 0;
+        const natCode = p.nature || p.naturecode || '';
+        const natLabel = mapping[natCode] || p.naturelabel || natCode;
+        const div = p.divcad || p.division || '';
+        const sect = p.section || '';
+        const rad = p.primarynumber || p.radical || '';
+        const bis = p.bisnumber || p.bis || '';
+        const exp = p.exponentletter || p.exposant || '';
+        const puis = p.exponentnumber || p.puissance || '';
+        const parcStr = `${sect} ${rad}${bis? '/'+bis:''} ${exp} ${puis}`.trim();
 
-        // Parsing Nature
-        let natCode = p.nature || p.naturecode || "";
-        const mappingNature = {"1":"Terre","2":"Pâture","3":"Pré","4":"Jardin","6":"Pré","9":"Bois","33":"Chemin","78":"Terrain à bâtir","200":"Maison"};
-        let natLabel = mappingNature[natCode] || p.naturelabel || natCode;
-
-        // Parsing Identifiant Parcelle
-        let div = p.divcad || p.division || "";
-        let sect = p.section || "";
-        let rad = p.primarynumber || p.radical || "";
-        let bis = p.bisnumber || p.bis || "";
-        let exp = p.exponentletter || p.exposant || "";
-        let puis = p.exponentnumber || p.puissance || "";
-        let parcStr = `${sect} ${rad} ${bis? '/'+bis : ''} ${exp} ${puis}`.trim();
-
-        // Objet fusionné
         MERGED_DATA.push({
-            id: idx,
-            div: div,
-            sect: sect,
-            parc: parcStr,
-            nature: natLabel,
+            id: idx+1,
+            div, sect, parc: parcStr, nature: natLabel,
             surf_cad: surf,
-            pp_m2: 0,
-            exc_m2: 0,
-            serv_m2: 0,
-            loc_m2: 0,
-            ss_m2: 0,
-            trav_m2: 0,
-            owners: owners,
-            // Champs texte
-            plan_num: "",
-            precad: "",
-            sit: owners.length > 0 ? `${owners[0].rue} ${owners[0].num}, ${owners[0].ville}` : ""
+            pp_m2: 0, exc_m2: 0, serv_m2: 0, loc_m2: 0, ss_m2:0, trav_m2:0,
+            owners,
+            plan_num:'', precad:'', sit: owners[0] ? `${owners[0].rue} ${owners[0].num}, ${owners[0].cp} ${owners[0].ville}` : ''
         });
     });
-
     log(`Fusion terminée. ${MERGED_DATA.length} lignes créées.`);
+    notify('Fusion terminée.','success');
     renderAll();
     document.getElementById('btnExcel').disabled = false;
+    document.getElementById('btnPDF').disabled = false;
+    saveState();
 }
 
 /* ==============================================
-   RENDU TABLEAUX
+   RENDU
    ============================================== */
 function m2toHa(m2) {
     if(!m2) return {h:"", a:"", c:""};
@@ -368,34 +484,23 @@ function m2toHa(m2) {
     let a = Math.floor(v/100); v %= 100;
     return {h: h||"", a: a<10 && h ? '0'+a : (a||""), c: v<10 ? '0'+v : v};
 }
-
-function renderAll() {
-    renderT1();
-    renderT2();
-}
+function renderAll(){renderT1();renderT2();}
 
 function renderT1() {
     const tbody = document.querySelector('#t1 tbody');
     tbody.innerHTML = '';
     const search = document.getElementById('searchBox').value.toLowerCase();
-
     MERGED_DATA.forEach((row, idx) => {
-        // Filtre
         if(search && !JSON.stringify(row).toLowerCase().includes(search)) return;
-
         const tr = document.createElement('tr');
         const s = m2toHa(row.surf_cad);
         const pp = m2toHa(row.pp_m2);
         const exc = m2toHa(row.surf_cad - row.pp_m2);
         const serv = m2toHa(row.serv_m2);
         const loc = m2toHa(row.loc_m2);
-        
-        // Proprios concaténés
-        let props = row.owners.map(o => `<div><b>${o.nom}</b> ${o.prenom}</div>`).join('');
+        let props = row.owners.map(o => `<div><b>${o.nom}</b> (${o.right}) ${o.prenom}</div>`).join('');
         let addrs = row.owners.map(o => `<div>${o.rue} ${o.num}, ${o.cp} ${o.ville}</div>`).join('');
-
         const ed = (k) => `contenteditable="true" onblur="updateData(${idx}, '${k}', this.innerText)"`;
-
         tr.innerHTML = `
             <td>${idx+1}</td>
             <td><input type="checkbox"></td>
@@ -419,20 +524,12 @@ function renderT2() {
     const tbody = document.querySelector('#t2 tbody');
     tbody.innerHTML = '';
     const search = document.getElementById('searchBox').value.toLowerCase();
-
     MERGED_DATA.forEach((row, idx) => {
         if(search && !JSON.stringify(row).toLowerCase().includes(search)) return;
-
         const tr = document.createElement('tr');
         const ed = (k) => `contenteditable="true" onblur="updateData(${idx}, '${k}', this.innerText)"`;
-
-        // Proprio format complet
-        let fullProps = row.owners.map(o => 
-            `(${o.nn ? 'NN:'+o.nn : ''}) ${o.nom} ${o.prenom} - ${o.rue} ${o.num}, ${o.cp} ${o.ville}`
-        ).join('\n----------------\n');
-        
+        let fullProps = row.owners.map(o => `(${o.nn ? 'NN:'+o.nn : ''}) ${o.nom} ${o.prenom} - ${o.rue} ${o.num}, ${o.cp} ${o.ville} [${o.right}]`).join('\n----------------\n');
         let commDiv = (row.owners[0]?.ville || "") + " " + row.div;
-
         tr.innerHTML = `
             <td>${idx+1}</td>
             <td ${ed('plan_num')}>${row.plan_num}</td>
@@ -453,62 +550,142 @@ function renderT2() {
     });
 }
 
-// Mise à jour des données (Synchro)
-function updateData(idx, key, val) {
+function updateData(idx,key,val){
     val = val.trim();
-    
-    // Si c'est une surface Ha A Ca entrée manuellement, c'est compliqué, 
-    // ici on suppose que l'edit vient du tableau 2 (M²) ou que l'utilisateur tape du M² brut.
-    // Pour simplifier cette version, on parse comme float si c'est un champ m2
-    if(key.endsWith('_m2') || key === 'surf_cad') {
-        // Nettoyage si format Ha A Ca collé par erreur (on prend juste les chiffres)
-        let clean = val.replace(/[^0-9.,]/g, '').replace(',','.');
+    if(key.endsWith('_m2') || key==='surf_cad') {
+        let clean = val.replace(/[^0-9.,]/g,'').replace(',','.');
         MERGED_DATA[idx][key] = parseFloat(clean) || 0;
     } else {
         MERGED_DATA[idx][key] = val;
     }
-    
-    // On relance le rendu pour synchro
-    // Petit delai pour pas perdre le focus instantanément (trick UX)
-    setTimeout(renderAll, 50); 
+    saveState();
+    setTimeout(renderAll,50);
 }
-
-function filtrerTableaux() {
-    renderAll();
-}
+function filtrerTableaux(){renderAll();}
 
 /* ==============================================
-   EXPORT EXCEL (SIMPLE)
+   EXPORT EXCEL (STYLISÉ)
    ============================================== */
 async function exportExcel() {
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet("Emprises");
-    
-    // Header
-    ws.addRow(["N°", "Division", "Section", "Parcelle", "Nature", "Surf Cad (m²)", "Propriétaires", "Emprise PP (m²)", "Servitude (m²)", "Location (m²)"]);
-    
-    MERGED_DATA.forEach((r, i) => {
-        let props = r.owners.map(o => `${o.nom} ${o.prenom}`).join(' / ');
-        ws.addRow([i+1, r.div, r.sect, r.parc, r.nature, r.surf_cad, props, r.pp_m2, r.serv_m2, r.loc_m2]);
+    const ws = wb.addWorksheet('Emprises');
+    const borderThin = {style:'thin',color:{argb:'FFCCCCCC'}};
+    const headerFill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F4F6'}};
+    const headerRow = ws.addRow(['N°','Division','Section','Parcelle','Nature','Surf Cad (m²)','Propriétaires','Emprise PP (m²)','Servitude (m²)','Location (m²)']);
+    headerRow.eachCell(c=>{c.font={bold:true};c.border={top:borderThin,left:borderThin,bottom:borderThin,right:borderThin};c.fill=headerFill;});
+    MERGED_DATA.forEach((r,i)=>{
+        const props = r.owners.map(o=>`${o.nom} ${o.prenom} [${o.right}]`).join(' / ');
+        const row = ws.addRow([i+1,r.div,r.sect,r.parc,r.nature,r.surf_cad,props,r.pp_m2,r.serv_m2,r.loc_m2]);
+        row.eachCell(c=>{c.border={top:borderThin,left:borderThin,bottom:borderThin,right:borderThin};});
     });
-
+    ws.columns = [5,12,12,18,30,15,45,15,15,15].map(w=>({width:w}));
     const buf = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheet.sheet"});
-    const a = document.createElement("a");
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = "export_cadastre.xlsx";
+    a.download = 'export_cadastre.xlsx';
     a.click();
 }
 
-// Initialisation drag&drop tableau
-new Sortable(document.querySelector('#t1 tbody'), {
-    handle: 'tr',
-    onEnd: (evt) => {
-        const item = MERGED_DATA.splice(evt.oldIndex, 1)[0];
-        MERGED_DATA.splice(evt.newIndex, 0, item);
-        renderAll();
+/* ==============================================
+   EXPORT PDF
+   ============================================== */
+const PDF_CONFIG = {margin:12,lineHeight:6};
+function sectionParcelInfo(doc,y,row){
+    doc.text(`Parcelle: ${row.sect} ${row.parc} - Nature: ${row.nature}`,PDF_CONFIG.margin,y);
+    doc.text(`Division: ${row.div} | Surf. cad: ${row.surf_cad} m² | PP: ${row.pp_m2} m²`,PDF_CONFIG.margin,y+PDF_CONFIG.lineHeight);
+    return y + PDF_CONFIG.lineHeight*2;
+}
+function sectionOwners(doc,y,row){
+    doc.text('Propriétaires:',PDF_CONFIG.margin,y);
+    y += PDF_CONFIG.lineHeight;
+    row.owners.forEach(o=>{
+        doc.text(`- ${o.nom} ${o.prenom} (${o.right}) - ${o.rue} ${o.num}, ${o.cp} ${o.ville}`,PDF_CONFIG.margin,y);
+        y += PDF_CONFIG.lineHeight;
+    });
+    return y;
+}
+function footer(doc){
+    const pageCount = doc.internal.getNumberOfPages();
+    for(let i=1;i<=pageCount;i++) {
+        doc.setPage(i);
+        doc.text(`Page ${i}/${pageCount}`, doc.internal.pageSize.getWidth()-40, doc.internal.pageSize.getHeight()-10);
     }
-});
+}
+function exportPDF() {
+    if(!MERGED_DATA.length) return notify('Aucune donnée à exporter.','error');
+    const doc = new jsPDF({orientation:'landscape'});
+    doc.setFontSize(11);
+    MERGED_DATA.forEach((row,idx)=>{
+        let y = 15;
+        doc.text(`Emprise ${idx+1}`,PDF_CONFIG.margin,y);
+        y += PDF_CONFIG.lineHeight;
+        y = sectionParcelInfo(doc,y,row);
+        y = sectionOwners(doc,y,row);
+        doc.autoTable({
+            startY:y+2,
+            styles:{fontSize:8},
+            head:[['Plan','Précad.','Sit.','Surf Cad','Surf PP','Surf Serv','Surf Loc']],
+            body:[[row.plan_num,row.precad,row.sit,row.surf_cad,row.pp_m2,row.serv_m2,row.loc_m2]]
+        });
+        if(idx < MERGED_DATA.length-1) doc.addPage();
+    });
+    footer(doc);
+    doc.save('emprises.pdf');
+}
+
+/* ==============================================
+   LOCAL STORAGE
+   ============================================== */
+function saveState(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({DATA_PARC,DATA_PROP,MERGED_DATA})); }catch(e){log('Storage failed','err');}
+}
+function loadState(){
+    try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(!raw) return;
+        const parsed = JSON.parse(raw);
+        DATA_PARC = parsed.DATA_PARC||[];
+        DATA_PROP = parsed.DATA_PROP||[];
+        MERGED_DATA = parsed.MERGED_DATA||[];
+        if(DATA_PARC.length && DATA_PROP.length) document.getElementById('btnFusion').disabled = false;
+        if(MERGED_DATA.length) {renderAll(); document.getElementById('btnExcel').disabled=false; document.getElementById('btnPDF').disabled=false;}
+        document.getElementById('statusA').textContent = `Propriétaires: ${DATA_PROP.length}`;
+        document.getElementById('statusB').textContent = `Parcelles: ${DATA_PARC.length}`;
+    }catch(e){log('Impossible de restaurer l\'état','err');}
+}
+function resetAll(){
+    DATA_PARC=[];DATA_PROP=[];MERGED_DATA=[];
+    document.getElementById('statusA').textContent='En attente...';
+    document.getElementById('statusB').textContent='En attente...';
+    document.getElementById('btnFusion').disabled=true;
+    document.getElementById('btnExcel').disabled=true;
+    document.getElementById('btnPDF').disabled=true;
+    renderAll();
+    localStorage.removeItem(STORAGE_KEY);
+}
+
+/* ==============================================
+   INIT
+   ============================================== */
+window.onload = () => {
+    loadState();
+    new Sortable(document.querySelector('#t1 tbody'), {
+        handle: 'tr',
+        onEnd: (evt) => {
+            const item = MERGED_DATA.splice(evt.oldIndex, 1)[0];
+            MERGED_DATA.splice(evt.newIndex, 0, item);
+            saveState();
+            renderAll();
+        }
+    });
+};
+
+window.onerror = function(msg,url,line){
+    log(`ERREUR CRITIQUE JS: ${msg} (Ligne ${line})`,'err');
+    notify('Erreur critique, voir log.','error');
+};
 </script>
+
 </body>
 </html>
