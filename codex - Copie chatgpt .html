@@ -355,49 +355,21 @@ function readTolerant(file) {
 /* ==============================================
    CHARGEMENT FICHIERS
    ============================================== */
-const ACCEPTED_EXT = ['xlsx','xls','csv'];
 document.getElementById('fileA').addEventListener('change', (e) => handleFiles(e.target.files));
 document.getElementById('fileB').addEventListener('change', (e) => handleFiles(e.target.files));
-
-['dzA','dzB'].forEach(id => {
-    const dz = document.getElementById(id);
-    ['dragenter','dragover'].forEach(evt => dz.addEventListener(evt, ev => {
-        ev.preventDefault();
-        dz.classList.add('drag');
-    }));
-    ['dragleave','drop'].forEach(evt => dz.addEventListener(evt, ev => {
-        ev.preventDefault();
-        dz.classList.remove('drag');
-    }));
-    dz.addEventListener('drop', ev => {
-        ev.preventDefault();
-        const dropped = Array.from(ev.dataTransfer.files || []);
-        const files = dropped.filter(f => ACCEPTED_EXT.includes(f.name.toLowerCase().split('.').pop() || ''));
-        if(!files.length) {
-            notify('Format non supporté. Utilisez un fichier .xlsx, .xls ou .csv','error');
-            return;
-        }
-        handleFiles(files);
-    });
-});
 
 async function handleFiles(files) {
     if(!files || files.length === 0) return;
     let loaded = 0;
     for(const f of files) {
-        try {
-            const {kind,data} = await readTolerant(f);
-            if(kind === 'PROP') {
-                DATA_PROP = DATA_PROP.concat(data);
-            } else {
-                DATA_PARC = DATA_PARC.concat(data);
-            }
-            loaded += data.length;
-            log(`${f.name} chargé (${data.length} lignes, détecté ${kind}).`);
-        } catch(err) {
-            console.error(err);
-            notify(`Impossible de lire ${f.name}. Vérifiez le format du fichier.`,'error');
+        const {kind,data} = await readTolerant(f);
+        if(kind === 'PROP') {
+            DATA_PROP = DATA_PROP.concat(data);
+        } else {
+            DATA_PARC = DATA_PARC.concat(data);
         }
+        loaded += data.length;
+        log(`${f.name} chargé (${data.length} lignes, détecté ${kind}).`);
     }
     notify(`${loaded} lignes importées.`,'success');
     document.getElementById('statusA').textContent = `Propriétaires: ${DATA_PROP.length}`;
